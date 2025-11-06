@@ -1,0 +1,20 @@
+{
+  "name": "ai_module",
+  "version": "1.0.0",
+  "description": "A general purpose module built for use in ai applications.",
+  "homepage": "https://github.com/jjlukose55/ai-module#readme",
+  "bugs": {
+    "url": "https://github.com/jjlukose55/ai-module/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jjlukose55/ai-module.git"
+  },
+  "license": "ISC",
+  "author": "Justin Lukose",
+  "type": "commonjs",
+  "main": "ai-module.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
