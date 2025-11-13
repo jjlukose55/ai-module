@@ -2,7 +2,7 @@ import {
     LOG_LEVELS,
     OpenAIProvider,
     SelfHostedProvider
-} from './ai-module.js';
+} from 'ai-module';
 
 // ===================================================================
 // =================  Application-Specific Logic  ====================
