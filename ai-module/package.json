@@ -1,5 +1,5 @@
 {
-  "name": "ai_module",
+  "name": "ai-module",
   "version": "1.0.0",
   "description": "A general purpose module built for use in ai applications.",
   "homepage": "https://github.com/jjlukose55/ai-module#readme",
@@ -12,9 +12,12 @@
   },
   "license": "ISC",
   "author": "Justin Lukose",
-  "type": "commonjs",
+  "type": "module",
   "main": "ai-module.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
   }
 }

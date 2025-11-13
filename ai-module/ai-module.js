@@ -1,7 +1,8 @@
 /* ====================  ai-streaming-module.js  ==================== */
 /* A reusable, decoupled ES Module for streaming AI responses.      */
-/* This module has NO KNOWLEDGE of the DOM.                         */
 /* ================================================================== */
+
+import fetch from 'node-fetch';
 
 export const LOG_LEVELS = { INFO: 'INFO', DEBUG: 'DEBUG', ERROR: 'ERROR', WARN: 'WARN' };
 
