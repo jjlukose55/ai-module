@@ -10,6 +10,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
-    "ai-module": "file:../ai-module/ai-module"
+    "ai-module": "file:../ai-module",
+    "express": "^5.1.0"
   }
 }

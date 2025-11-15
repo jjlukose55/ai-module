@@ -1,16 +1,11 @@
-import {
-    LOG_LEVELS,
-    OpenAIProvider,
-    SelfHostedProvider
-} from 'ai-module';
-
 // ===================================================================
 // =================  Application-Specific Logic  ====================
 // ===================================================================
-// These functions are specific to this HTML page and handle all
-// DOM interaction, state management, and orchestration.
+// This is the BROWSER code. It makes fetch requests to our
+// OWN server (server.js). It does NOT import 'ai-module'.
 // ===================================================================
 
+const LOG_LEVELS = { INFO: 'INFO', DEBUG: 'DEBUG', ERROR: 'ERROR', WARN: 'WARN' };
 const now = () => new Date().toISOString();
 
 /**
@@ -45,41 +40,19 @@ function showStatus(message, type = 'info') {
 }
 
 /**
- * Application-specific factory to get the correct provider instance.
- * It reads from the DOM and injects the application logger.
- */
-function getProvider() {
-    const type = document.getElementById('modelType').value;
-    
-    // Create a logger object that matches the `console` interface
-    // but routes to our application's `log` function.
-    const appLogger = {
-        info: (msg) => log(msg, LOG_LEVELS.INFO),
-        debug: (msg) => log(msg, LOG_LEVELS.DEBUG),
-        warn: (msg) => log(msg, LOG_LEVELS.WARN),
-        error: (msg, err) => log(msg, LOG_LEVELS.ERROR, err),
-    };
-
-    if (type === 'openai') {
-        const apiKey = document.getElementById('apiKey').value.trim();
-        return new OpenAIProvider(apiKey, appLogger);
-    }
-    if (type === 'selfhosted') {
-        const url = document.getElementById('modelUrl').value.trim();
-        return new SelfHostedProvider(url, appLogger);
-    }
-    return null;
-}
-
-/**
- * Fetches models using the currently selected provider and updates the UI.
+ * This function now fetches models from our server's API.
  */
 async function fetchModels() {
-    const provider = getProvider();
+    log('Fetching models from server...', LOG_LEVELS.INFO);
+    
+    const providerType = document.getElementById('modelType').value;
+    const apiKey = document.getElementById('apiKey').value.trim();
+    const modelUrl = document.getElementById('modelUrl').value.trim();
+    
     const select = document.getElementById('modelSelect');
     const refreshBtn = document.getElementById('refreshModels');
 
-    if (!provider) {
+    if (!providerType) {
         showStatus('Please select a valid model type.', 'error');
         return;
     }
@@ -87,9 +60,27 @@ async function fetchModels() {
     refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
     refreshBtn.disabled = true;
     select.innerHTML = '<option value="">Fetching...</option>';
+    select.disabled = true;
 
     try {
-        const models = await provider.fetchModels();
+        // Call our new /api/models endpoint
+        const response = await fetch('/api/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                providerType,
+                apiKey: apiKey || null,
+                modelUrl: modelUrl || null
+            })
+        });
+
+        if (!response.ok) {
+            const errData = await response.json();
+            throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const models = await response.json();
+        
         select.innerHTML = '<option value="">Select a model...</option>';
         models.forEach((m) => {
             const opt = document.createElement('option');
@@ -97,7 +88,9 @@ async function fetchModels() {
             opt.textContent = m.name;
             select.appendChild(opt);
         });
+        select.disabled = false;
         showStatus(`Loaded ${models.length} models`);
+        
     } catch (err) {
         console.error(err);
         select.innerHTML = '<option value="">No Models Found</option>';
@@ -106,58 +99,6 @@ async function fetchModels() {
         refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
         refreshBtn.disabled = false;
     }
-}
-
-/**
- * Main orchestration function to stream or bulk-generate AI responses.
- * Manages spinners and UI updates based on callbacks.
- * @param {object} config - Configuration object
- * @param {boolean} config.stream - Whether to stream the response.
- */
-async function handleAIRequest(config) {
-  const provider = getProvider();
-  
-  if (!provider) {
-    const error = { message: 'Invalid model provider selected.' };
-    if (config.onError) config.onError(error);
-    else log(error.message, LOG_LEVELS.ERROR);
-    return;
-  }
-  
-  try {
-    showSpinner(true);
-    
-    if (config.stream) {
-        // --- Streaming Path ---
-        log('Requesting stream response...', LOG_LEVELS.DEBUG);
-        // Pass callbacks directly to the provider
-        await provider.streamResponse(config);
-    } else {
-        // --- Bulk Response Path ---
-        log('Requesting bulk response...', LOG_LEVELS.DEBUG);
-        const content = await provider.generateResponse(config);
-        
-        // Manually trigger callbacks
-        if (config.onContent) {
-            config.onContent(content);
-        }
-        if (config.onDone) {
-            config.onDone();
-        }
-    }
-  } catch (error) {
-    console.error('AI Streaming Error:', error);
-    if (config.onError) {
-      config.onError(error);
-    } else {
-      log(`AI request failed: ${error.message || error}`, LOG_LEVELS.ERROR);
-    }
-  } finally {
-    showSpinner(false);
-    // For streaming, onDone is called by the provider
-    // For bulk, onDone is called above
-    // This finally block just ensures spinner is hidden
-  }
 }
 
 /**
@@ -205,13 +146,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const promptEl = document.getElementById('prompt');
     const responseEl = document.getElementById('response');
     const refreshModelsBtn = document.getElementById('refreshModels');
-    const streamCheckbox = document.getElementById('streamCheckbox'); // Get the checkbox
+    const streamCheckbox = document.getElementById('streamCheckbox');
+    const modelSelect = document.getElementById('modelSelect'); // Need this
+    const apiKeyEl = document.getElementById('apiKey'); // Need this
+    const modelUrlEl = document.getElementById('modelUrl'); // Need this
 
     // --- Initial Setup ---
     
-    // Call the setup function to enable auto-fetching
+    // RE-ENABLE auto-fetching
     setupModelAutoFetch();
     log('Auto-fetch for models has been set up.');
+    
+    // NO LONGER need to replace the select box
+    // log('Auto-fetch disabled. Please type model name manually.', LOG_LEVELS.WARN);
+    refreshModelsBtn.disabled = false;
+    modelSelect.disabled = false;
+    // const modelInput = document.createElement('input');
+    // ... (REMOVED code that replaced the select box)
+
 
     // Function to toggle visibility of provider-specific settings
     const toggleProviderSettings = () => {
@@ -222,21 +174,17 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     
     // --- Attach Event Listeners ---
-
-    // Toggle settings visibility when provider changes
     modelTypeEl.addEventListener('change', toggleProviderSettings);
-
-    // Manually refresh models when the refresh button is clicked
     refreshModelsBtn.addEventListener('click', () => {
         log('Manual model refresh triggered.', LOG_LEVELS.INFO);
-        fetchModels();
+        fetchModels(); // Re-enabled this
     });
 
     // Handle the main "Send" button click
     sendButton.addEventListener('click', async () => {
-        const model = document.getElementById('modelSelect').value;
+        const model = document.getElementById('modelSelect').value; // Get model from SELECT again
         const prompt = promptEl.value.trim();
-        const stream = streamCheckbox.checked; // Check if streaming is enabled
+        const stream = streamCheckbox.checked;
 
         if (!model) {
             alert('Please select a model from the list.');
@@ -248,50 +196,69 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         log(`Sending prompt to model: ${model}`, LOG_LEVELS.INFO);
-        
-        // Clear previous response and set button to loading state
         responseEl.textContent = '';
         sendButton.disabled = true;
+        showSpinner(true);
 
-        // Construct the message history
-        const messages = [{
-            role: 'user',
-            content: prompt
-        }];
-
-        // Call the main streaming function
-        await handleAIRequest({
-            // --- Core Config ---
+        // This is the payload we send to OUR server
+        const payload = {
+            providerType: modelTypeEl.value,
             model: model,
-            messages: messages,
-            stream: stream, // Pass the stream flag
+            messages: [{ role: 'user', content: prompt }],
+            stream: stream,
+            
+            // Pass auth info (server will use its own if these are blank)
+            apiKey: apiKeyEl.value.trim() || null,
+            modelUrl: modelUrlEl.value.trim() || null,
 
-            // --- Callbacks ---
-            onContent: (chunk) => {
-                // For bulk, 'chunk' will be the full response
-                responseEl.textContent += chunk;
-            },
-            onThinking: (thought) => {
-                // You could display this in a separate "thinking..." element
-                log(`Model is thinking: ${thought}`, LOG_LEVELS.DEBUG);
-            },
-            onDone: () => {
-                log('Request finished successfully.', LOG_LEVELS.INFO);
-                sendButton.disabled = false;
-            },
-            onError: (err) => {
-                console.error('An error occurred during streaming:', err);
-                const errorMessage = `ERROR: ${err.status ? `HTTP ${err.status}` : ''} ${err.message || 'An unknown error occurred.'}`;
-                responseEl.textContent = errorMessage;
-                log(errorMessage, LOG_LEVELS.ERROR, err.body || err);
-                sendButton.disabled = false;
-            },
-
-            // --- Optional Parameters ---
-            think: true, // For self-hosted models that support it
+            // Pass other params
+            think: true,
             temperature: 0.7,
             maxTokens: 4000
-        });
+        };
+
+        try {
+            // Call our server's API, not the AI's
+            const response = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || `HTTP error! status: ${response.status}`);
+            }
+
+            if (stream) {
+                // --- Handle Stream ---
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) {
+                        log('Stream finished.', LOG_LEVELS.INFO);
+                        break;
+                    }
+                    const chunk = decoder.decode(value, { stream: true });
+                    responseEl.textContent += chunk;
+                }
+            } else {
+                // --- Handle Bulk ---
+                const data = await response.json();
+                responseEl.textContent = data.content;
+                log('Bulk response received.', LOG_LEVELS.INFO);
+            }
+
+        } catch (err) {
+            console.error('An error occurred:', err);
+            const errorMessage = `ERROR: ${err.message || 'An unknown error occurred.'}`;
+            responseEl.textContent = errorMessage;
+            log(errorMessage, LOG_LEVELS.ERROR);
+        } finally {
+            sendButton.disabled = false;
+            showSpinner(false);
+        }
     });
 
     // --- Initial State Calls ---
