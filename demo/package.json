@@ -1,6 +1,6 @@
 {
   "name": "demo",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A test program for ai-module.js",
   "license": "ISC",
   "author": "",
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "ai-module": "file:../ai-module",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "multer": "^2.0.2"
   }
 }

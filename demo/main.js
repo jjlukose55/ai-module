@@ -147,25 +147,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const responseEl = document.getElementById('response');
     const refreshModelsBtn = document.getElementById('refreshModels');
     const streamCheckbox = document.getElementById('streamCheckbox');
-    const modelSelect = document.getElementById('modelSelect'); // Need this
-    const apiKeyEl = document.getElementById('apiKey'); // Need this
-    const modelUrlEl = document.getElementById('modelUrl'); // Need this
+    const modelSelect = document.getElementById('modelSelect');
+    const apiKeyEl = document.getElementById('apiKey');
+    const modelUrlEl = document.getElementById('modelUrl');
+    const imageUploadEl = document.getElementById('imageUpload'); // <-- ADDED
 
     // --- Initial Setup ---
-    
-    // RE-ENABLE auto-fetching
     setupModelAutoFetch();
     log('Auto-fetch for models has been set up.');
-    
-    // NO LONGER need to replace the select box
-    // log('Auto-fetch disabled. Please type model name manually.', LOG_LEVELS.WARN);
     refreshModelsBtn.disabled = false;
     modelSelect.disabled = false;
-    // const modelInput = document.createElement('input');
-    // ... (REMOVED code that replaced the select box)
 
-
-    // Function to toggle visibility of provider-specific settings
     const toggleProviderSettings = () => {
         const selectedType = modelTypeEl.value;
         log(`Model type changed to: ${selectedType}`);
@@ -177,21 +169,23 @@ document.addEventListener('DOMContentLoaded', () => {
     modelTypeEl.addEventListener('change', toggleProviderSettings);
     refreshModelsBtn.addEventListener('click', () => {
         log('Manual model refresh triggered.', LOG_LEVELS.INFO);
-        fetchModels(); // Re-enabled this
+        fetchModels();
     });
 
     // Handle the main "Send" button click
     sendButton.addEventListener('click', async () => {
-        const model = document.getElementById('modelSelect').value; // Get model from SELECT again
+        const model = document.getElementById('modelSelect').value;
         const prompt = promptEl.value.trim();
         const stream = streamCheckbox.checked;
+        const imageFile = imageUploadEl.files[0]; // <-- GET THE FILE
 
         if (!model) {
             alert('Please select a model from the list.');
             return;
         }
-        if (!prompt) {
-            alert('Please enter a prompt.');
+        // Allow request if *either* prompt or image is present
+        if (!prompt && !imageFile) {
+            alert('Please enter a prompt or attach an image.');
             return;
         }
 
@@ -200,29 +194,38 @@ document.addEventListener('DOMContentLoaded', () => {
         sendButton.disabled = true;
         showSpinner(true);
 
-        // This is the payload we send to OUR server
+        // This is the payload object
         const payload = {
             providerType: modelTypeEl.value,
             model: model,
-            messages: [{ role: 'user', content: prompt }],
+            // Use a default prompt if only an image is given
+            messages: [{ role: 'user', content: prompt || "What do you see in this image?" }],
             stream: stream,
-            
-            // Pass auth info (server will use its own if these are blank)
             apiKey: apiKeyEl.value.trim() || null,
             modelUrl: modelUrlEl.value.trim() || null,
-
-            // Pass other params
             think: true,
             temperature: 0.7,
             maxTokens: 4000
         };
 
         try {
-            // Call our server's API, not the AI's
+            // 1. Create new FormData
+            const formData = new FormData();
+
+            // 2. Stringify the payload and append it as 'payload' field
+            formData.append('payload', JSON.stringify(payload));
+            
+            // 3. ADD THE IMAGE if it exists
+            if (imageFile) {
+                formData.append('image', imageFile);
+                log('Attaching image to request.', LOG_LEVELS.INFO);
+            }
+
+            // 4. Call our server's API with the new FormData body
             const response = await fetch('/api/chat', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
+                // DO NOT set Content-Type; browser sets it with boundary
+                body: formData
             });
 
             if (!response.ok) {
@@ -246,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 // --- Handle Bulk ---
                 const data = await response.json();
-                responseEl.textContent = data.content;
+                responseEl.textContent = data.content; // 'content' field
                 log('Bulk response received.', LOG_LEVELS.INFO);
             }
 
@@ -258,6 +261,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } finally {
             sendButton.disabled = false;
             showSpinner(false);
+            imageUploadEl.value = null; // <-- CLEAR THE FILE INPUT
         }
     });
 

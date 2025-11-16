@@ -40,17 +40,16 @@ export class AIProvider {
     const { onContent, onThinking, onDone } = callbacks;
     const decoder = new TextDecoder();
     let leftover = '';
-    const reader = resp.body.getReader();
 
     try {
       this.logger.debug('--- Stream NDJSON: START ---');
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        const text = decoder.decode(value, { stream: true });
+      
+      // Use 'for await...of' to iterate the Node.js stream from node-fetch
+      for await (const chunk of resp.body) {
+        // 'chunk' is a Buffer, which TextDecoder handles
+        const text = decoder.decode(chunk, { stream: true });
         const lines = (leftover + text).split('\n');
-        leftover = lines.pop();
+        leftover = lines.pop(); // Keep the last, possibly incomplete, line
 
         for (const raw of lines) {
           const line = raw.trim();
@@ -60,17 +59,30 @@ export class AIProvider {
           if (result.isDone) {
             onDone();
             this.logger.debug(`--- Stream NDJSON: END (${result.reason}) ---`);
-            return;
+            return; // Exit the loop and function
           }
           if (typeof result.content === 'string') onContent(result.content);
           if (typeof result.thinking === 'string') onThinking(result.thinking);
         }
       }
+      
+      // Process any remaining text after the loop
+      if (leftover.trim()) {
+          const line = leftover.trim();
+          const result = this._parseStreamLine(line);
+          if (!result.isDone) {
+             if (typeof result.content === 'string') onContent(result.content);
+             if (typeof result.thinking === 'string') onThinking(result.thinking);
+          }
+      }
+
       onDone();
       this.logger.debug('--- Stream NDJSON: END (normal close) ---');
-    } finally {
-      reader.releaseLock();
+    } catch (error) {
+        this.logger.error('Error during stream processing:', error);
+        onDone(); // Ensure onDone is always called
     }
+    // No 'finally { reader.releaseLock() }' block is needed
   }
   
   _parseStreamLine(line){
@@ -204,10 +216,62 @@ export class SelfHostedProvider extends AIProvider {
         };
     }
 
+    /**
+     * NEW Helper: Processes messages for Ollama's /api/chat format.
+     * Transforms OpenAI-style complex messages into Ollama-style
+     * complex messages (with a message-level 'images' array).
+     */
+    _processMessagesForOllama(messages) {
+        const processedMessages = [];
+
+        for (const msg of messages) {
+            // Check for complex content (image + text)
+            if (msg.role === 'user' && Array.isArray(msg.content)) {
+                const ollamaMsg = { role: 'user', content: '', images: [] };
+                let textContent = '';
+
+                for (const part of msg.content) {
+                    if (part.type === 'text') {
+                        textContent += part.text + ' ';
+                    } else if (part.type === 'image_url' && part.image_url.url) {
+                        // This is the data URL (e.g., "data:image/png;base64,iVBOR...")
+                        const dataUrl = part.image_url.url;
+                        // Strip the prefix to get only the Base64 data
+                        const base64Data = dataUrl.substring(dataUrl.indexOf(',') + 1);
+                        ollamaMsg.images.push(base64Data);
+                    }
+                }
+                
+                ollamaMsg.content = textContent.trim();
+
+                // Only add the 'images' key if there are images
+                if (ollamaMsg.images.length === 0) {
+                    // No images found, send as a simple text message
+                    processedMessages.push({ role: 'user', content: ollamaMsg.content });
+                } else {
+                    // Images found, send the complex object
+                    processedMessages.push(ollamaMsg);
+                }
+
+            } else {
+                // This is a simple (text-only) message, so pass it through
+                processedMessages.push(msg);
+            }
+        }
+        return processedMessages;
+    }
+
+
+    /**
+     * UPDATED Payload Builder
+     */
     _buildPayload(config) {
-        return {
+        // Process messages to get the correct Ollama format
+        const processedMessages = this._processMessagesForOllama(config.messages);
+
+        const payload = {
             model: config.model,
-            messages: config.messages,
+            messages: processedMessages, // Use the processed, correctly-formatted messages
             stream: config.stream,
             options: {
                 temperature: config.temperature,
@@ -215,6 +279,10 @@ export class SelfHostedProvider extends AIProvider {
             },
             think: config.think,
         };
+        
+        // NO top-level 'images' key. It's now inside the 'messages' array.
+        this.logger.debug(`Built Ollama payload.`);
+        return payload;
     }
 
     _parseStreamLine(line) {
@@ -233,8 +301,7 @@ export class SelfHostedProvider extends AIProvider {
     
     async _sendRequestInternal(config) {
         const { url, headers } = this._getUrlAndHeaders();
-        // **FIXED BUG HERE:** Pass config directly so _buildPayload
-        // gets the correct 'stream' value.
+        // _buildPayload now correctly formats for vision/text
         const payload = this._buildPayload(config);
 
         this.logger.info(`>>> POST ${config.stream ? '(stream)' : '(bulk)'} ${url}`);
