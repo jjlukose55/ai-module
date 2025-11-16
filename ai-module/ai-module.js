@@ -261,10 +261,6 @@ export class SelfHostedProvider extends AIProvider {
         return processedMessages;
     }
 
-
-    /**
-     * UPDATED Payload Builder
-     */
     _buildPayload(config) {
         // Process messages to get the correct Ollama format
         const processedMessages = this._processMessagesForOllama(config.messages);
@@ -280,7 +276,12 @@ export class SelfHostedProvider extends AIProvider {
             think: config.think,
         };
         
-        // NO top-level 'images' key. It's now inside the 'messages' array.
+        // add the 'format' parameter.
+        if (config.format) {
+            payload.format = config.format;
+            this.logger.debug('Format for Ollama response found.');
+        }
+
         this.logger.debug(`Built Ollama payload.`);
         return payload;
     }
