@@ -1,8 +1,13 @@
 # Changelog
 
+## [1.2.0] - 2025-11-16
+### Notes
+- Added structured response support for Ollama
+
 ## [1.1.0] - 2025-11-15
 ### Notes
 - Added image processing capabilities to the chat methods.
+- Added structured response support for Ollama
 
 ## [1.0.3] - 2025-11-15
 ### Notes
